@@ -36,7 +36,7 @@ def cross_loss(prediction_data, label_data, size_avg):
     label_probability = loss_prob[:, label_data]
 
     # calculate loss's log
-    loss = np.log(label_probability)
+    loss = np.log10(label_probability)
 
     # number of data
     m = loss.shape[0]
@@ -48,7 +48,7 @@ def cross_loss(prediction_data, label_data, size_avg):
     if size_avg:
         loss = loss / m
 
-    return loss
+    return loss, loss_prob, loss_sum, loss_exp
 
 
 class NN:
@@ -83,6 +83,11 @@ class NN:
 
         # theta's gradient
         self.Theta_Grad = []
+        self.OutPut_Grad = []
+
+        # output's probability through  the calculate loss fun
+        self.output_probability = None
+        self.sum_of_exp = None
 
         # batch normalization theta
         self.Batch_Norm_Theta = []
@@ -109,6 +114,7 @@ class NN:
 
         self.Theta = []
         self.Theta_Grad = []
+        self.OutPut_Grad = []
         self.Batch_Norm_Theta = []
 
         # for store output - mean
@@ -146,9 +152,13 @@ class NN:
                 # determine we didn't normalize output
                 self.Batch_Norm_Theta.append([False])
 
+            # output gradient
+            output_grad = np.zeros(out_num)
+
             # add data
             self.Theta.append(layer_theta)
             self.Theta_Grad.append(layer_theta_grad)
+            self.OutPut_Grad.append(output_grad)
             self.Norm_Out.append(norm_out)
 
     #######################
@@ -219,7 +229,7 @@ class NN:
 
         if self.cost_fun_name == "cross":
             # calculate cross entropy loss
-            loss = cross_loss(prediction_data, label_data, self.size_avg)
+            loss, self.output_probability, self.sum_of_exp, self.exp_out = cross_loss(prediction_data, label_data, self.size_avg)
 
         return loss
 
@@ -247,13 +257,63 @@ class NN:
     #######################
     #######################
 
-    def backward(self):
+    def backward(self, label):
 
         """
         calculate gradient with backward algorithm
 
+        label :     output's Truth label ==> (m, number_of_output_layer)
         :return:
         """
+
+        # calculate cost fun gradient
+        grad = self.cost_fun_grad(label)
+
+        # calculate layer's gradient
+        for layer_index in range(len(self.architect)-1, -1, -1):
+
+            # layer
+            layer = self.architect[layer_index]
+
+
+
+    def cost_fun_grad(self, label):
+
+        """
+        calculate the cost function gradient
+
+        :param label:       output's Truth label
+        :return:            gradient
+        """
+
+        # last layer's Gradient
+        last_layer_theta = self.Theta[-1]
+        num_out_layer = last_layer_theta.shape[1]
+
+        # initialize grad in the last layer
+        grad = np.ones(num_out_layer)
+
+        # if size_svg in loss function == True then we must divide it to num_out else we didn't do anything
+        if self.size_avg:
+            grad = grad / num_out_layer
+
+        # grad = grad * Yi
+        grad = grad * label
+
+        # log derivation
+        grad = grad * (1 / (np.log(10) * self.output_probability))
+
+        # exp derivation
+        first_grad = (1 / self.sum_of_exp) * grad
+        second_grad = -1 * self.exp_out * grad * (1 / self.sum_of_exp ** 2)
+
+        grad = first_grad + second_grad
+
+        # final cost function gradient
+        # this is the input gradient for layer's gradient
+        grad = np.sum(grad, axis=0)
+
+        return grad
 
     #######################
     #######################
@@ -269,6 +329,7 @@ class NN:
 
         # optimize every layer's theta in a different step
         for layer_num in range(len(self.Theta)):
+
             # get layer's theta and gradient
             theta = self.Theta[layer_num]
             grad = self.Theta_Grad[layer_num]
