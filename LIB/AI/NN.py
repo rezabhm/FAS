@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 
 
@@ -48,7 +50,7 @@ def cross_loss(prediction_data, label_data, size_avg):
     if size_avg:
         loss = loss / m
 
-    return loss, loss_prob, loss_sum, loss_exp
+    return loss, loss_prob, loss_sum.reshape((prediction_data.shape[0], 1)), loss_exp
 
 
 class NN:
@@ -103,6 +105,9 @@ class NN:
         # set size average status . if it's true we will calculate average loss .
         self.size_avg = size_avg
 
+        # blew list contain all of layer's dropout index
+        self.dropout_list = []
+
         # set linear rate for optimizing
         self.lr = lr
 
@@ -120,6 +125,9 @@ class NN:
         # for store output - mean
         self.Norm_Out = []
 
+        # dropout list
+        self.dropout_list = []
+
         for layer in self.architect:
 
             # get layer's input and output number
@@ -127,6 +135,7 @@ class NN:
             in_num = layer["input_num"]
             out_num = layer["output_num"]
             batch_norm_status = layer["batch-norm"]
+            dropout_amount = layer["dropout"]
 
             # create theta randomly
             layer_theta = np.random.randn((in_num, out_num))
@@ -154,6 +163,22 @@ class NN:
 
             # output gradient
             output_grad = np.zeros(out_num)
+
+            # determine dropout index
+            dropout_amount = dropout_amount/100
+            dropout_amount_num = int(out_num * dropout_amount)
+
+            # create dropout index randomly
+            dropout_list_layer = []
+            layer_range = list(range(out_num))
+            for i in range(dropout_amount_num):
+
+                randint = random.randint(0, len(layer_range)-1)
+                val = layer_range[randint]
+                _ = layer_range.remove(val)
+                dropout_list_layer.append(val)
+
+            self.dropout_list.append(dropout_list_layer)
 
             # add data
             self.Theta.append(layer_theta)
@@ -203,6 +228,13 @@ class NN:
             if activation_name == "relu":
                 # relu activation
                 input_data = self.relu(input_data)
+
+            # add dropout
+            dropout_amount = self.dropout_list[layer_num]
+
+            if dropout_amount > 0 :
+
+                input_data[:, dropout_amount] = 0.0
 
             # add layer's output to output's list
             self.layers_output.append(input_data)
@@ -270,13 +302,22 @@ class NN:
         """
 
         # calculate cost fun gradient
+        # data is (m,n) shape
         grad = self.cost_fun_grad(label)
 
         # calculate layer's gradient
         for layer_index in range(len(self.architect)-1, -1, -1):
 
             # layer
-            layer = self.architect[layer_index]
+            layer_arch = self.architect[layer_index]
+
+            # calculate dropout gradient
+            dropout_list = self.dropout_list[layer_index]
+
+            if dropout_list > 0:
+
+                # change grad param to zero
+                grad[:, dropout_list] = 0.0
 
 
 
@@ -291,14 +332,14 @@ class NN:
 
         # last layer's Gradient
         last_layer_theta = self.Theta[-1]
-        num_out_layer = last_layer_theta.shape[1]
+        num_out_layer = last_layer_theta.shape
 
         # initialize grad in the last layer
         grad = np.ones(num_out_layer)
 
         # if size_svg in loss function == True then we must divide it to num_out else we didn't do anything
         if self.size_avg:
-            grad = grad / num_out_layer
+            grad = grad / num_out_layer[0]
 
         # grad = grad * Yi
         grad = grad * label
@@ -307,14 +348,14 @@ class NN:
         grad = grad * (1 / (np.log(10) * self.output_probability))
 
         # exp derivation
-        first_grad = (1 / self.sum_of_exp) * grad
-        second_grad = -1 * self.exp_out * grad * (1 / self.sum_of_exp ** 2)
+        first_grad = grad / self.sum_of_exp
+        second_grad = -1 * self.exp_out * grad * (1 / (self.sum_of_exp ** 2))
 
         grad = first_grad + second_grad
 
         # final cost function gradient
         # this is the input gradient for layer's gradient
-        grad = np.sum(grad, axis=0)
+        # grad = np.sum(grad, axis=0)
 
         return grad
 
