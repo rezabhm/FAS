@@ -108,8 +108,17 @@ class NN:
         # blew list contain all of layer's dropout index
         self.dropout_list = []
 
+        # for store all of parameter that is under zero and we will change it to 0.
+        self.activation_grad_need = []
+
+        # add exp to output layer
+        self.exp_out = None
+
         # set linear rate for optimizing
         self.lr = lr
+
+        # models input data (train data)
+        self.train_data = None
 
     def init_theta(self):
 
@@ -144,17 +153,19 @@ class NN:
             layer_theta_grad = np.zeros((in_num, out_num))
 
             # initialize norm_out
-            norm_out = np.zeros(out_num)
+            norm_out = np.zeros((1, out_num))
 
             # create batch_norm layer for layer
             if batch_norm_status:
 
                 # initialize mean and std for layer
                 norm_mean = np.random.randn((1, out_num))
+                norm_mean_grad = np.random.randn((1, out_num))
                 norm_std = np.random.randn((1, out_num))
+                norm_std_grad = np.random.randn((1, out_num))
 
                 # add to Batch_Norm_Theta list
-                self.Batch_Norm_Theta.append([True, norm_mean, norm_std])
+                self.Batch_Norm_Theta.append([True, norm_mean, norm_std, norm_mean_grad, norm_std_grad])
 
             else:
 
@@ -204,6 +215,12 @@ class NN:
         # store every layer's output
         self.layers_output = []
 
+        # for store all of parameter that is under zero and we will change it to zero
+        self.activation_grad_need = []
+
+        # store models input data (train data)
+        self.train_data = input_data
+
         # calculate layer's output
         for layer_num in range(len(self.Theta)):
 
@@ -226,8 +243,16 @@ class NN:
             # get activation fun name
             activation_name = self.architect[layer_num]["activation"]
             if activation_name == "relu":
+
                 # relu activation
-                input_data = self.relu(input_data)
+                input_data, activation_grad_param = self.relu(input_data)
+
+            else:
+
+                # this is a list with 2 index in neural network that first index is row and second is column
+                activation_grad_param = []
+
+            self.activation_grad_need.append(activation_grad_param)
 
             # add dropout
             dropout_amount = self.dropout_list[layer_num]
@@ -308,18 +333,65 @@ class NN:
         # calculate layer's gradient
         for layer_index in range(len(self.architect)-1, -1, -1):
 
-            # layer
-            layer_arch = self.architect[layer_index]
-
             # calculate dropout gradient
             dropout_list = self.dropout_list[layer_index]
 
-            if dropout_list > 0:
+            if len(dropout_list) > 0:
 
                 # change grad param to zero
                 grad[:, dropout_list] = 0.0
 
+            # calculate activation gradient
+            gradient_need = self.activation_grad_need[layer_index]
 
+            if len(gradient_need) > 0:
+
+                # get index from gradient_need param
+                row = gradient_need[0].tolist()
+                column = gradient_need[1].tolist()
+
+                # change all of parameter to 0. because in forward step we had change to 0 so it's
+                # backward param is 0.0
+                grad[row, column] = 0.0
+
+            # normalize gradient
+            if self.architect[layer_index]["batch-norm"]:
+
+                # get batch-norm data
+                batch_norm_x = self.Batch_Norm_Theta[layer_index]
+
+                # calculate std gradient
+                batch_norm_x[-1] = grad * (
+                                                (-1 * self.Norm_Out[layer_index])
+                                                /
+                                                (batch_norm_x[2]**2)
+                                           )
+
+                # calculate numerator gradient in normalizing
+                grad = grad / batch_norm_x[2]
+
+                # calculate mean theta gradient
+                batch_norm_x[3] = -1 * grad / batch_norm_x[2]
+
+                # update gradient
+                self.Batch_Norm_Theta[layer_index] = batch_norm_x
+
+            # Theta and input's gradient
+
+            if layer_index != 0:
+
+                # for all of layer's except of first layer because first's layer's input is out train data
+                # we must multiplication with previous layer's output
+                self.Theta_Grad[layer_index] = grad * self.layers_output[layer_index - 1]
+
+            elif layer_index == 0:
+
+                # multiplication with NN input data
+                self.Theta_Grad[layer_index] = grad * self.train_data
+
+            # calculate input's data gradient == Theta * grad
+            # this layer's input's data's grad is previous layer's first grad
+            grad = self.Theta[layer_index] * grad
 
     def cost_fun_grad(self, label):
 
@@ -375,20 +447,41 @@ class NN:
         # optimize every layer's theta in a different step
         for layer_num in range(len(self.Theta)):
 
+            # optimize model's Theta
             # get layer's theta and gradient
             theta = self.Theta[layer_num]
             grad = self.Theta_Grad[layer_num]
 
             # optimize theta
-            new_theta = theta + (self.lr * grad * -1)
+            new_theta = theta + (self.lr * grad.sum(axis=0) * -1)
 
             # update theta
             self.Theta[layer_num] = new_theta
 
+            # optimize normalize Theta
+            if self.Batch_Norm_Theta[layer_num][0]:
+
+                # get theta and gradient param
+                mean_theta = self.Batch_Norm_Theta[layer_num][1]
+                mean_theta_grd = self.Batch_Norm_Theta[layer_num][3]
+                std_theta = self.Batch_Norm_Theta[layer_num][2]
+                std_theta_grd = self.Batch_Norm_Theta[layer_num][4]
+
+                # add linear rate
+                mean_theta_grd = -1 * self.lr * mean_theta_grd.sum(axis=0)
+                std_theta_grd = -1 * self.lr * std_theta_grd.sum(axis=1)
+
+                # optimize
+                mean_theta = mean_theta + mean_theta_grd
+                std_theta = std_theta + std_theta_grd
+
+                # update param
+                self.Batch_Norm_Theta[layer_num][1] = mean_theta
+                self.Batch_Norm_Theta[layer_num][2] = std_theta
+
     #######################
     #######################
     """    fit model    """
-
     #######################
     #######################
 
