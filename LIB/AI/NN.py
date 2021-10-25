@@ -1,7 +1,7 @@
 import random
-
+import sys
 import numpy as np
-
+import pickle
 
 def normalize_input_data(x, mean, std):
     """
@@ -485,5 +485,71 @@ class NN:
     #######################
     #######################
 
-    def fit(self):
-        pass
+    def fit(self, train_data_x, train_data_y, epoch_num=10, batch_size=16):
+
+        """
+        start train model
+
+        train_data_x :        this is array (m,n) that include all of data for training model
+        train_data_y :        this is array (m, ) that include above data's label
+        epoch_num    :        this is epoch number that determine number of epoch for training data
+        batch_size   :        define number of data batch
+        """
+
+        best_loss = float('inf')
+
+        # start training
+        # epoch loop
+        for epoch in range(epoch_num):
+
+            avg_loss = 0.0
+            num_data = 0
+
+            # batch size loop
+            for batch in range(0, train_data_x.shape[0], batch_size):
+
+                # calculate range of data for training based of batch size
+                batch_finish = batch + batch_size if batch+batch_size < train_data_x.shape[0] else train_data_x.shape[0]
+
+                # get batch data
+                batch_data_x = train_data_x[batch:batch_finish, :]
+                batch_data_y = train_data_y[batch:batch_finish]
+
+                # forward
+                prediction_data = self.forward(batch_data_x)
+
+                # zero grad
+                self.zero_grad()
+
+                # calculate data loss
+                loss = self.cost_fun(prediction_data, batch_data_y)
+
+                # backward
+                self.backward(batch_data_y)
+
+                # optimize Theta
+                self.optimize()
+
+                # calculate average loss
+                avg_loss = (loss + (avg_loss * num_data)) / (num_data + (batch_finish - batch))
+                num_data += batch_finish - batch
+
+                # report result
+                sys.stdout.flush()
+                sys.stdout.write("\r [{0}/{1}]training loss : {2} && average loss : {3}".format(str(batch),
+                                                                          str(train_data_x.shape[0]), str(loss),
+                                                                          str(avg_loss)))
+
+            if avg_loss <= best_loss:
+
+                # store model's Theta
+                with open("best_model.pickle", "wb") as fd:
+                    pickle.dump([self.Theta, self.Batch_Norm_Theta, self.architect], fd)
+
+                avg_loss_best = "Stored"
+
+            else:
+                avg_loss_best = "Don't Stored"
+
+            # report epochs loss
+            print("Epoch : {0} -- training loss == {1} -- {2}".format(str(epoch), str(avg_loss), avg_loss_best))
