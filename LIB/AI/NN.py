@@ -3,6 +3,27 @@ import sys
 import numpy as np
 import pickle
 
+
+def relu(data):
+
+    """
+    get data and add relu activation
+
+    :param data:            data that we must add relu fun
+    """
+
+    # find all of data that is under 0
+    data_finder = np.where(data <= 0.0)
+
+    # convert from numpy array to list
+    rows = data_finder[0].tolist()
+    columns = data_finder[1].tolist()
+
+    data[rows, columns] = 0.0
+
+    return data, data_finder
+
+
 def normalize_input_data(x, mean, std):
     """
     normalize input data with mean and std based of this formula ==> ( x - mean) / std
@@ -54,6 +75,7 @@ def cross_loss(prediction_data, label_data, size_avg):
 
 
 class NN:
+
     """
     this is neural network class
     """
@@ -234,8 +256,9 @@ class NN:
             # get norm param
             norm_param = self.Batch_Norm_Theta[layer_num]
             if norm_param[0]:
+
                 # normalized data with mean and std
-                input_data, x_mean = normalize_input_data(input_data, norm_param[1], norm_param[2])
+                input_data, x_mean = normalize_input_data(input_data, norm_param[1], norm_param[3])
 
                 # store Norm_Out 's index
                 self.Norm_Out[layer_num] = x_mean
@@ -245,7 +268,7 @@ class NN:
             if activation_name == "relu":
 
                 # relu activation
-                input_data, activation_grad_param = self.relu(input_data)
+                input_data, activation_grad_param = relu(input_data)
 
             else:
 
@@ -255,11 +278,11 @@ class NN:
             self.activation_grad_need.append(activation_grad_param)
 
             # add dropout
-            dropout_amount = self.dropout_list[layer_num]
+            dropout_list = self.dropout_list[layer_num]
 
-            if dropout_amount > 0 :
+            if len(dropout_list) > 0:
 
-                input_data[:, dropout_amount] = 0.0
+                input_data[:, dropout_list] = 0.0
 
             # add layer's output to output's list
             self.layers_output.append(input_data)
@@ -288,7 +311,8 @@ class NN:
 
         if self.cost_fun_name == "cross":
             # calculate cross entropy loss
-            loss, self.output_probability, self.sum_of_exp, self.exp_out = cross_loss(prediction_data, label_data, self.size_avg)
+            loss, self.output_probability, self.sum_of_exp, self.exp_out = cross_loss(prediction_data, label_data,
+                                                                                      self.size_avg)
 
         return loss
 
@@ -537,8 +561,10 @@ class NN:
                 # report result
                 sys.stdout.flush()
                 sys.stdout.write("\r [{0}/{1}]training loss : {2} && average loss : {3}".format(str(batch),
-                                                                          str(train_data_x.shape[0]), str(loss),
-                                                                          str(avg_loss)))
+                                                                                                str(
+                                                                                                train_data_x.shape[0]
+                                                                                                ), str(loss), str(
+                                                                                                            avg_loss)))
 
             if avg_loss <= best_loss:
 
